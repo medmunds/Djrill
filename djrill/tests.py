@@ -1,5 +1,3 @@
-from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase
 
 from djrill.mail import DjrillMessage
@@ -37,7 +35,7 @@ class DjrillMessageTests(TestCase):
         self.assertEqual(msg.alternatives[0][0], self.html_content)
 
     def test_djrill_message_tag_failure(self):
-        with self.assertRaises(ImproperlyConfigured):
+        with self.assertRaises(ValueError):
             DjrillMessage(self.subject, self.text_content, self.from_email,
                 self.to, tags=["_fail"])
 

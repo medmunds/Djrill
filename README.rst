@@ -93,10 +93,10 @@ Example, in a view: ::
             msg.send()
             ... # you'll want to return some sort of HttpResponse
 
-Any tags over 50 characters in length are silently ignored since Mandrill doesn't support them. Any tags starting with an underscore will raise an ``ImproperlyConfigured``
+Any tags over 50 characters in length are silently ignored since Mandrill doesn't support them. Any tags starting with an underscore will raise a ``ValueError``
 exception. Tags with an underscore are reserved by Mandrill.
 
-If you attach more than one alternative type, an ``ImproperlyConfigured`` exception will be raised. Mandrill does not support attaching 
+If you attach more than one alternative type, a ``ValueError`` exception will be raised. Mandrill does not support attaching
 files to an email, so attachments will be silently ignored.
 
 Not shown above, but settable, are the two options, ``track_clicks`` and ``track_opens``. They are both set to ``True`` by default, but can be set to ``False`` and passed in when you instantiate your ``DjrillMessage`` 

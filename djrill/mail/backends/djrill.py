@@ -156,7 +156,7 @@ class DjrillBackend(BaseEmailBackend):
         the HTML output for your email.
         """
         if len(message.alternatives) > 1:
-            raise ImproperlyConfigured(
+            raise ValueError(
                 "Mandrill only accepts plain text and html emails. Please "
                 "check the alternatives you have attached to your message.")
 

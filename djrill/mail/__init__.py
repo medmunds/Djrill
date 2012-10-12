@@ -1,4 +1,3 @@
-from django.core.exceptions import ImproperlyConfigured
 from django.core.mail import EmailMultiAlternatives
 
 
@@ -23,7 +22,7 @@ class DjrillMessage(EmailMultiAlternatives):
         Check that all tags are below 50 chars and that they do not start
         with an underscore.
 
-        Raise ImproperlyConfigured if an underscore tag is passed in to
+        Raise ValueError if an underscore tag is passed in to
         alert the user. Any tag over 50 chars is left out of the list.
         """
         tag_list = []
@@ -32,7 +31,7 @@ class DjrillMessage(EmailMultiAlternatives):
             if len(tag) <= 50 and not tag.startswith("_"):
                 tag_list.append(tag)
             elif tag.startswith("_"):
-                raise ImproperlyConfigured(
+                raise ValueError(
                     "Tags starting with an underscore are reserved for "
                     "internal use and will cause errors with Mandill's API")
 

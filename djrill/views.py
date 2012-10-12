@@ -60,7 +60,7 @@ class DjrillApiJsonObjectsMixin(object):
 
     def get_api_uri(self):
         if self.api_uri is None:
-            raise ImproperlyConfigured(u"%(cls)s is missing an api_uri. Define "
+            raise NotImplementedError(u"%(cls)s is missing an api_uri. Define "
                 u"%(cls)s.api_uri or override %(cls)s.get_api_uri()." % {
                     "cls": self.__class__.__name__
                 })
