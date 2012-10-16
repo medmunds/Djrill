@@ -1,9 +1,11 @@
+# python setup.py test
+#   or
 # python runtests.py
-
-APP='djrill'
 
 import sys
 from django.conf import settings
+
+APP='djrill'
 
 settings.configure(
     DEBUG=True,
@@ -23,8 +25,11 @@ settings.configure(
 )
 
 from django.test.simple import DjangoTestSuiteRunner
-test_runner = DjangoTestSuiteRunner(verbosity=1)
-failures = test_runner.run_tests([APP, ])
 
-if failures:
+def runtests():
+    test_runner = DjangoTestSuiteRunner(verbosity=1)
+    failures = test_runner.run_tests([APP, ])
     sys.exit(failures)
+
+if __name__ == '__main__':
+    runtests()
