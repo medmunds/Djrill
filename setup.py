@@ -15,7 +15,7 @@ setup(
     install_requires=["requests", "django"],
     include_package_data=True,
     test_suite="runtests.runtests",
-    test_requires=[],
+    test_requires=["mock"],
     classifiers=[
         "Programming Language :: Python",
         "Topic :: Software Development :: Libraries :: Python Modules",
