@@ -119,7 +119,7 @@ class DjrillBackend(BaseEmailBackend):
         still work through Mandrill.
         """
         name, email = parseaddr(self.sender)
-        return {
+        msg_dict = {
             "text": message.body,
             "subject": message.subject,
             "from_email": email,
@@ -127,9 +127,19 @@ class DjrillBackend(BaseEmailBackend):
             "to": self.recipients
         }
 
+        if message.extra_headers:
+            accepted_headers = {}
+            for k in message.extra_headers.keys():
+                if k.startswith("X-") or k == "Reply-To":
+                    accepted_headers.update(
+                        {"%s" % k: message.extra_headers[k]})
+            msg_dict.update({"headers": accepted_headers})
+
+        return msg_dict
+
     def _build_advanced_message_dict(self, message):
         """
-        Builds advanced message dict and attaches any accepted extra headers.
+        Builds advanced message dict
         """
         self.msg_dict.update({
             "tags": message.tags,
@@ -138,14 +148,6 @@ class DjrillBackend(BaseEmailBackend):
         if message.from_name:
             self.msg_dict["from_name"] = message.from_name
 
-        if message.extra_headers:
-            accepted_headers = {}
-
-            for k in message.extra_headers.keys():
-                if k.startswith("X-") or k == "Reply-To":
-                    accepted_headers.update(
-                        {"%s" % k: message.extra_headers[k]})
-            self.msg_dict.update({"headers": accepted_headers})
 
     def _add_alternatives(self, message):
         """
