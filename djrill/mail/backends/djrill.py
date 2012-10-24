@@ -7,6 +7,8 @@ from django.utils import simplejson as json
 from email.utils import parseaddr
 import requests
 
+MANDRILL_API_URL = "http://mandrillapp.com/api/1.0"
+
 class DjrillBackendHTTPError(Exception):
     """An exception that will turn into an HTTP error response."""
     def __init__(self, status_code, log_message=None):
@@ -33,15 +35,12 @@ class DjrillBackend(BaseEmailBackend):
         """
         super(DjrillBackend, self).__init__(**kwargs)
         self.api_key = getattr(settings, "MANDRILL_API_KEY", None)
-        self.api_url = getattr(settings, "MANDRILL_API_URL", None)
+        self.api_url = getattr(settings, "MANDRILL_API_URL", MANDRILL_API_URL) # allow override in settings
         self.connection = None
 
         if not self.api_key:
             raise ImproperlyConfigured("You have not set your mandrill api key "
                 "in the settings.py file.")
-        if not self.api_url:
-            raise ImproperlyConfigured("You have not added the Mandrill api "
-                "url to your settings.py")
 
         self.api_action = self.api_url + "/messages/send.json"
         self.api_verify = self.api_url + "/users/verify-sender.json"

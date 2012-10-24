@@ -22,7 +22,6 @@ class DjrillBackendMockAPITestCase(TestCase):
         self.mock_post.return_value = self.MockResponse()
 
         settings.MANDRILL_API_KEY = "FAKE_API_KEY_FOR_TESTING"
-        settings.MANDRILL_API_URL = "http://mandrillapp.com/api/1.0"
 
         self.original_email_backend = settings.EMAIL_BACKEND # this will be Django's locmem EmailBackend during tests
         settings.EMAIL_BACKEND = "djrill.mail.backends.djrill.DjrillBackend"
