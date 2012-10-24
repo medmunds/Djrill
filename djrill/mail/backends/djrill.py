@@ -95,7 +95,6 @@ class DjrillBackend(BaseEmailBackend):
 
         if getattr(message, "alternative_subtype", None):
             if message.alternative_subtype == "mandrill":
-                self._build_advanced_message_dict(message)
                 if message.alternatives:
                     self._add_alternatives(message)
 
@@ -135,19 +134,38 @@ class DjrillBackend(BaseEmailBackend):
                         {"%s" % k: message.extra_headers[k]})
             msg_dict.update({"headers": accepted_headers})
 
+        # Mandrill attributes that can be copied directly
+        mandrill_attrs = [
+            'from_name', # deprecated Djrill legacy - overrides display name parsed from from_email above
+            'track_opens', 'track_clicks', 'auto_text', 'url_strip_qs', 'preserve_recipients',
+            'tags', 'google_analytics_domains', 'google_analytics_campaign',
+            'metadata']
+        for attr in mandrill_attrs:
+            if hasattr(message, attr):
+                msg_dict[attr] = getattr(message, attr)
+
+        # Allow simple python dicts in place of Mandrill [{name:name, value:value},...] arrays...
+        if hasattr(message, 'global_merge_vars'):
+            msg_dict['global_merge_vars'] = self._expand_merge_vars(message.global_merge_vars)
+        if hasattr(message, 'merge_vars'):
+            # For testing reproducibility, we sort the recipients
+            msg_dict['merge_vars'] = [
+                { 'rcpt': rcpt, 'vars': self._expand_merge_vars(message.merge_vars[rcpt]) }
+                for rcpt in sorted(message.merge_vars.keys())
+            ]
+        if hasattr(message, 'recipient_metadata'):
+            # For testing reproducibility, we sort the recipients
+            msg_dict['recipient_metadata'] = [
+                { 'rcpt': rcpt, 'values': message.recipient_metadata[rcpt] }
+                for rcpt in sorted(message.recipient_metadata.keys())
+            ]
+
         return msg_dict
 
-    def _build_advanced_message_dict(self, message):
-        """
-        Builds advanced message dict
-        """
-        self.msg_dict.update({
-            "tags": message.tags,
-            "track_opens": message.track_opens,
-        })
-        if message.from_name:
-            self.msg_dict["from_name"] = message.from_name
-
+    def _expand_merge_vars(self, vars):
+        """Convert a dict of { name: value, ... } to [ {'name': name, 'value': value }, ... ]"""
+        # For testing reproducibility, we sort the keys
+        return [ { 'name': name, 'value': vars[name] } for name in sorted(vars.keys()) ]
 
     def _add_alternatives(self, message):
         """
@@ -163,6 +181,5 @@ class DjrillBackend(BaseEmailBackend):
                 "check the alternatives you have attached to your message.")
 
         self.msg_dict.update({
-            "html": message.alternatives[0][0],
-            "track_clicks": message.track_clicks
+            "html": message.alternatives[0][0]
         })

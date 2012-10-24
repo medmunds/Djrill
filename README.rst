@@ -65,46 +65,66 @@ Usage
 
 Since you are replacing the global ``EMAIL_BACKEND``, **all** emails are sent through Mandrill's service.
 
-If you just want to use Mandrill for sending emails through Django's built-in ``send_mail`` and ``send_mass_mail`` methods, all 
-you need to do is follow steps 1 through 3 of the above Configuration.
+In general, Djrill "just works" with Django's built-in `django.mail`_django-mail package, including ``send_mail``,
+``send_mass_mail``, ``EmailMessage`` and (for sending HTML email) ``EmailMultiAlternatives``.
 
-If, however, you want more control over the messages, to include an HTML version, or to attach tags or tracked URLs to an email, 
-usage of our ``DjrillMessage`` class, which is a thin wrapper around Django's ``EmailMultiAlternatives`` is required.
+You can also take advantage of Mandrill-specific features like tags, metadata, and tracking by creating a
+``django.mail.EmailMessage`` (or for HTML, ``django.mail.EmailMultiAlternatives``) object and setting Mandrill-specific
+properties on it before calling its ``send`` method.
 
-Example, in a view: ::
+Example: ::
 
-    from django.views.generic import View
+    from django.mail import EmailMultiAlternatives # or just EmailMessage if you don't need HTML
 
-    from djrill.mail import DjrillMessage
+    subject = "Djrill Message"
+    from_email = "Djrill Sender <djrill@example.com>" # this has to be in your Mandrill account's sending domains
+    to = ["Djrill Receiver <djrill.receiver@example.com>", "djrill.two@example.com"]
+    reply_email = "Customer Service <support@example.com>" # optional
+    text_content = "This is the text version of your email"
+    html_content = "<p>This is the HTML version of your email</p>" # optional, requires the ``attach_alternative`` line below
 
-    class SendEmailView(View):
+    msg = EmailMultiAlternatives(subject, text_content, from_email, to, headers={'Reply-To': reply_email})
+    msg.tags = ["one tag", "two tag", "red tag", "blue tag"] # optional, Mandrill-specific message extension
+    msg.metadata = {'user_id': "8675309"} # optional, Mandrill-specific message extension
+    msg.attach_alternative(html_content, "text/html")
+    msg.send()
 
-        def get(self, request):
-            subject = "Djrill Message"
-            from_email = "djrill@example.com" # this has to be one of your approved senders
-            from_name = "Djrill" # optional
-            to = ["Djrill Receiver <djrill.receiver@example.com>", "djrill.two@example.com"]
-            text_content = "This is the text version of your email"
-            html_content = "<p>This is the HTML version of your email</p>" # optional, requires the ``attach_alternative`` line below
-            tags = ["one tag", "two tag", "red tag", "blue tag"] # optional, can't be over 50 chars or start with an underscore
+Djrill supports most of the functionality of Django's ``EmailMessage`` and ``EmailMultiAlternatives``.
+Some limitations:
 
-            msg = DjrillMessage(subject, text_content, from_email, to, tags=tags, from_name=from_name)
-            msg.attach_alternative(html_content, "text/html")
-            msg.send()
-            ... # you'll want to return some sort of HttpResponse
+* Djrill accepts additional headers, but only ``Reply-To`` and ``X-*`` (since that is all that Mandrill accepts). Any
+  other extra headers are silently discarded.
+* Djrill (currently) assumes that if you attach an alternative type, it must be HTML. And if you attach more than one
+  alternative type, a ``ValueError`` exception will be raised.
+* Djrill (currently) silently ignores all attachments on a message.
+* Djrill treats all cc and bcc recipients as if they were additional "to" addresses. (Mandrill does not distinguish cc,
+  and only allows a single bcc -- which Djrill doesn't use. *Caution:* depending on the ``preserve_recipients`` setting,
+  this could result in exposing bcc addresses to all recipients. It's probably best to just avoid bcc.)
 
-Any tags over 50 characters in length are silently ignored since Mandrill doesn't support them. Any tags starting with an underscore will raise a ``ValueError``
-exception. Tags with an underscore are reserved by Mandrill.
+Many of the options from the Mandrill `messages/send.json API`_mandrill_api_send ``message`` struct can be set
+directly on an EmailMessage object:
 
-If you attach more than one alternative type, a ``ValueError`` exception will be raised. Mandrill does not support attaching
-files to an email, so attachments will be silently ignored.
+* ``track_opens`` - Boolean
+* ``track_clicks`` - Boolean (If you want track clicks in HTML only, not plaintext mail, you must *not* set this
+  property, and instead just set the default in your Mandrill account sending options.)
+* ``auto_text`` - Boolean
+* ``url_strip_qs`` - Boolean
+* ``preserve_recipients`` - Boolean -- see the caution about bcc addresses above
+* ``global_merge_vars`` - a dict -- e.g., ``{ 'company': "ACME", 'offer': "10% off" }``
+* ``recipient_merge_vars`` - a dict whose keys are the recipient email addresses and whose values are dicts of
+  merge vars for each recipient -- e.g., ``{ 'wiley@example.com': { 'offer': "15% off anvils" } }``
+* ``tags`` - a list of strings. Any tags over 50 characters in length are silently ignored since Mandrill doesn't
+  support them. Any tags starting with an underscore will raise a ``ValueError`` exception. (Tags with an underscore
+  are reserved by Mandrill.)
+* ``google_analytics_domains`` - a list of string domain names
+* ``google_analytics_campaign`` - a string or list of strings
+* ``metadata`` - a dict
+* ``recipient_metadata`` - a dict whose keys are the recipient email addresses, and whose values are dicts of
+  metadata for each recipient (similar to ``recipient_merge_vars``)
 
-Not shown above, but settable, are the two options, ``track_clicks`` and ``track_opens``. They are both set to ``True`` by default, but can be set to ``False`` and passed in when you instantiate your ``DjrillMessage`` 
-object.
+If you have any questions about the python syntax for any of these properties, see ``DjrillMandrillFeatureTests`` in
+tests.py.
 
-Just like Django's ``EmailMessage`` and ``EmailMultiAlternatives``, ``DjrillMessage`` accepts extra headers through the 
-``headers`` argument. Currently it only accepts ``Reply-To`` and ``X-*`` headers since that is all that Mandrill accepts. Any 
-extra headers are silently discarded.
 
 Testing
 -------
@@ -131,4 +151,6 @@ the awesome ``requests`` library.
 .. _requests: http://docs.python-requests.org
 .. _django-adminplus: https://github.com/jsocol/django-adminplus
 .. _mock: http://www.voidspace.org.uk/python/mock/index.html
+.. _django-mail: https://docs.djangoproject.com/en/dev/topics/email/
+.. _mandril_api_send: https://mandrillapp.com/api/docs/messages.html#method=send
 

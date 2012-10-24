@@ -97,6 +97,90 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
         self.assertEqual(data['message']['to'][5]['email'], "bcc2@example.com")
 
 
+class DjrillMandrillFeatureTests(DjrillBackendMockAPITestCase):
+    """Test Djrill backend support for Mandrill-specific features"""
+
+    def setUp(self):
+        super(DjrillMandrillFeatureTests, self).setUp()
+        self.message = mail.EmailMessage('Subject', 'Text Body', 'from@example.com', ['to@example.com'])
+
+    def test_tracking(self):
+        # First make sure we're not setting the API param if the track_click attr isn't there.
+        # (The Mandrill account option of True for html, False for plaintext can't be communicated through
+        # the API, other than by omitting the track_clicks API param to use your account default.)
+        self.message.send()
+        data = self.get_api_call_data()
+        self.assertFalse('track_clicks' in data['message'])
+        # Now re-send with the params set
+        self.message.track_opens = True
+        self.message.track_clicks = True
+        self.message.url_strip_qs = True
+        self.message.send()
+        data = self.get_api_call_data()
+        self.assertEqual(data['message']['track_opens'], True)
+        self.assertEqual(data['message']['track_clicks'], True)
+        self.assertEqual(data['message']['url_strip_qs'], True)
+
+    def test_message_options(self):
+        self.message.auto_text = True
+        self.message.preserve_recipients = True
+        self.message.send()
+        data = self.get_api_call_data()
+        self.assertEqual(data['message']['auto_text'], True)
+        self.assertEqual(data['message']['preserve_recipients'], True)
+
+    def test_merge(self):
+        # Djrill expands simple python dicts into the more-verbose name/value structures the Mandrill API uses
+        self.message.global_merge_vars = { 'GREETING': "Hello", 'ACCOUNT_TYPE': "Basic" }
+        self.message.merge_vars = {
+            "customer@example.com": { 'GREETING': "Dear Customer", 'ACCOUNT_TYPE': "Premium" },
+            "guest@example.com": { 'GREETING': "Dear Guest" },
+        }
+        self.message.send()
+        data = self.get_api_call_data()
+        self.assertEqual(data['message']['global_merge_vars'],
+            [ {'name': 'ACCOUNT_TYPE', 'value': "Basic"},
+              {'name': "GREETING", 'value': "Hello"} ])
+        self.assertEqual(data['message']['merge_vars'],
+            [ { 'rcpt': "customer@example.com",
+                'vars': [{ 'name': 'ACCOUNT_TYPE', 'value': "Premium" },
+                         { 'name': "GREETING", 'value': "Dear Customer"}] },
+              { 'rcpt': "guest@example.com",
+                'vars': [{ 'name': "GREETING", 'value': "Dear Guest"}] }
+            ])
+
+    def test_tags(self):
+        self.message.tags = ["receipt", "repeat-customer"]
+        self.message.send()
+        data = self.get_api_call_data()
+        self.assertEqual(data['message']['tags'], ["receipt", "repeat-customer"])
+
+    def test_google_analytics(self):
+        self.message.google_analytics_domains = ["example.com"]
+        self.message.google_analytics_campaign = "Email Receipts"
+        self.message.send()
+        data = self.get_api_call_data()
+        self.assertEqual(data['message']['google_analytics_domains'], ["example.com"])
+        self.assertEqual(data['message']['google_analytics_campaign'], "Email Receipts")
+
+    def test_metadata(self):
+        self.message.metadata = { 'batch_number': "12345", 'batch_type': "Receipts" }
+        self.message.recipient_metadata = {
+            # Djrill expands simple python dicts into the more-verbose name/value structures the Mandrill API uses
+            "customer@example.com": { 'customer_id': "67890", 'order_id': "54321"  },
+            "guest@example.com": { 'customer_id': "94107", 'order_id': "43215"  }
+        }
+        self.message.send()
+        data = self.get_api_call_data()
+        self.assertEqual(data['message']['metadata'], { 'batch_number': "12345", 'batch_type': "Receipts" })
+        self.assertEqual(data['message']['recipient_metadata'],
+            [ { 'rcpt': "customer@example.com",
+                'values': { 'customer_id': "67890", 'order_id': "54321" } },
+              { 'rcpt': "guest@example.com",
+                'values': { 'customer_id': "94107", 'order_id': "43215" } }
+            ])
+
+
 
 class DjrillMessageTests(TestCase):
     def setUp(self):
