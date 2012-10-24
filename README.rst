@@ -18,7 +18,7 @@ Installation
     pip install djrill
 
 The only dependency other than Django is the requests_ library from Kenneth Reitz. If you do not install through PyPI you will 
-need to do ::
+need to do::
 
     pip install requests
 
@@ -27,23 +27,31 @@ Configuration
 
 In ``settings.py``:
 
-1. Add ``djrill`` to your ``INSTALLED_APPS``. ::
+1. Add ``djrill`` to your ``INSTALLED_APPS``:
+
+.. code:: python
 
     INSTALLED_APPS = (
         ...
         "djrill"
     )
 
-2. Add the following line, substituting your own ``MANDRILL_API_KEY``::
+2. Add the following line, substituting your own ``MANDRILL_API_KEY``:
+
+.. code:: python
 
     MANDRILL_API_KEY = "brack3t-is-awesome"
 
-3. Override your existing email backend with the following line::
+3. Override your existing email backend with the following line:
+
+.. code:: python
 
     EMAIL_BACKEND = "djrill.mail.backends.djrill.DjrillBackend"
 
 4. (optional) If you want to be able to add senders through Django's admin or view stats about your 
-   messages, do the following in your base ``urls.py`` ::
+   messages, do the following in your base ``urls.py``:
+
+.. code:: python
 
     ...
     from django.contrib import admin
@@ -64,14 +72,16 @@ Usage
 
 Since you are replacing the global ``EMAIL_BACKEND``, **all** emails are sent through Mandrill's service.
 
-In general, Djrill "just works" with Django's built-in `django.mail`_django-mail package, including ``send_mail``,
+In general, Djrill "just works" with Django's built-in `django.mail`_ package, including ``send_mail``,
 ``send_mass_mail``, ``EmailMessage`` and (for sending HTML email) ``EmailMultiAlternatives``.
 
 You can also take advantage of Mandrill-specific features like tags, metadata, and tracking by creating a
 ``django.mail.EmailMessage`` (or for HTML, ``django.mail.EmailMultiAlternatives``) object and setting Mandrill-specific
 properties on it before calling its ``send`` method.
 
-Example: ::
+Example:
+
+.. code:: python
 
     from django.mail import EmailMultiAlternatives # or just EmailMessage if you don't need HTML
 
@@ -100,8 +110,8 @@ Some limitations:
   and only allows a single bcc -- which Djrill doesn't use. *Caution:* depending on the ``preserve_recipients`` setting,
   this could result in exposing bcc addresses to all recipients. It's probably best to just avoid bcc.)
 
-Many of the options from the Mandrill `messages/send.json API`_mandrill_api_send ``message`` struct can be set
-directly on an EmailMessage object:
+Many of the options from the Mandrill `messages/send.json API`_ ``message`` struct can be set
+directly on an ``EmailMessage`` object:
 
 * ``track_opens`` - Boolean
 * ``track_clicks`` - Boolean (If you want track clicks in HTML only, not plaintext mail, you must *not* set this
@@ -150,6 +160,6 @@ the awesome ``requests`` library.
 .. _requests: http://docs.python-requests.org
 .. _django-adminplus: https://github.com/jsocol/django-adminplus
 .. _mock: http://www.voidspace.org.uk/python/mock/index.html
-.. _django-mail: https://docs.djangoproject.com/en/dev/topics/email/
-.. _mandril_api_send: https://mandrillapp.com/api/docs/messages.html#method=send
+.. _django.mail: https://docs.djangoproject.com/en/dev/topics/email/
+.. _messages/send.json API: https://mandrillapp.com/api/docs/messages.html#method=send
 
