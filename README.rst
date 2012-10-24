@@ -14,14 +14,20 @@ Djrill is made available under the BSD license.
 Installation
 ------------
 
-::
+Install from PyPI::
 
     pip install djrill
 
-The only dependency other than Django is the requests_ library from Kenneth Reitz. If you do not install through PyPI you will 
-need to do::
+[Note: the PyPI version is probably pretty outdated from the code you're
+looking at here. You can install *this* version directly from github::
 
-    pip install requests
+    pip install git+git://github.com/medmunds/Djrill.git#egg=djrill
+
+]
+
+The only dependency other than Django is the requests_ library from Kenneth Reitz. (If you do not install Djrill
+using pip or setuptools, you will also need to ``pip install requests``.)
+
 
 Configuration
 -------------
