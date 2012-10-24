@@ -42,7 +42,6 @@ class DjrillBackend(BaseEmailBackend):
                 "in the settings.py file.")
 
         self.api_action = self.api_url + "/messages/send.json"
-        self.api_verify = self.api_url + "/users/verify-sender.json"
 
     def send_messages(self, email_messages):
         if not email_messages:
@@ -61,16 +60,11 @@ class DjrillBackend(BaseEmailBackend):
         if not message.recipients():
             return False
 
-        self.sender = sanitize_address(message.from_email, message.encoding)
-        recipients_list = [sanitize_address(addr, message.encoding)
-            for addr in message.recipients()]
-        self.recipients = [{"email": e, "name": n} for n,e in [
-            parseaddr(r) for r in recipients_list]]
-
         try:
-            self.msg_dict = self._build_standard_message_dict(message)
+            msg_dict = self._build_standard_message_dict(message)
+            self._add_mandrill_options(message, msg_dict)
             if getattr(message, 'alternatives', None):
-                self._add_alternatives(message)
+                self._add_alternatives(message, msg_dict)
         except ValueError:
             if not self.fail_silently:
                 raise
@@ -78,43 +72,53 @@ class DjrillBackend(BaseEmailBackend):
 
         djrill_it = requests.post(self.api_action, data=json.dumps({
             "key": self.api_key,
-            "message": self.msg_dict
+            "message": msg_dict
         }))
 
         if djrill_it.status_code != 200:
             if not self.fail_silently:
-                raise DjrillBackendHTTPError(status_code=djrill_it.status_code, log_message="Failed to send a message to %s, from %s" % (self.recipients, self.sender))
+                raise DjrillBackendHTTPError(status_code=djrill_it.status_code,
+                    log_message="Failed to send a message to %s, from %s" % (msg_dict['to'], msg_dict['from_email']))
             return False
         return True
 
     def _build_standard_message_dict(self, message):
-        """
-        Build standard message dict.
+        """Create a Mandrill send message struct from a Django EmailMessage.
 
         Builds the standard dict that Django's send_mail and send_mass_mail
         use by default. Standard text email messages sent through Django will
         still work through Mandrill.
         """
-        name, email = parseaddr(self.sender)
+        sender = sanitize_address(message.from_email, message.encoding)
+        from_name, from_email = parseaddr(sender)
+
+        recipients_list = [sanitize_address(addr, message.encoding)
+                           for addr in message.recipients()]
+        recipients = [{"email": to_email, "name": to_name} for to_name, to_email in
+                      [parseaddr(rcpt) for rcpt in recipients_list]]
+
         msg_dict = {
             "text": message.body,
             "subject": message.subject,
-            "from_email": email,
-            "from_name": name,
-            "to": self.recipients
+            "from_email": from_email,
+            "from_name": from_name,
+            "to": recipients
         }
-
         if message.extra_headers:
             for k in message.extra_headers.keys():
                 if k != "Reply-To" and not k.startswith("X-"):
                     raise ValueError("Invalid message header '%s' - Mandrill only allows Reply-To and X-* headers" % k)
             msg_dict["headers"] = message.extra_headers
 
+        return msg_dict
+
+    def _add_mandrill_options(self, message, msg_dict):
+        """Extend msg_dict to include Mandrill-specific options set on message"""
         # Mandrill attributes that can be copied directly
         mandrill_attrs = [
             'from_name', # deprecated Djrill legacy - overrides display name parsed from from_email above
             'track_opens', 'track_clicks', 'auto_text', 'url_strip_qs', 'preserve_recipients',
-            'tags', 'google_analytics_domains', 'google_analytics_campaign',
+            'google_analytics_domains', 'google_analytics_campaign',
             'metadata']
         for attr in mandrill_attrs:
             if hasattr(message, attr):
@@ -136,22 +140,20 @@ class DjrillBackend(BaseEmailBackend):
                 for rcpt in sorted(message.recipient_metadata.keys())
             ]
 
-        # Sanity check tags
-        if 'tags' in msg_dict:
-            for tag in msg_dict['tags']:
+        if hasattr(message, 'tags'):
+            for tag in message.tags:
                 if len(tag) > 50:
                     raise ValueError("Invalid Mandrill tag '%s' - longer than 50 chars" % tag)
                 elif tag.startswith("_"):
                     raise ValueError("Invalid Mandrill tag '%s' - starts with underscore" % tag)
-
-        return msg_dict
+            msg_dict['tags'] = message.tags
 
     def _expand_merge_vars(self, vars):
         """Convert a dict of { name: value, ... } to [ {'name': name, 'value': value }, ... ]"""
         # For testing reproducibility, we sort the keys
         return [ { 'name': name, 'value': vars[name] } for name in sorted(vars.keys()) ]
 
-    def _add_alternatives(self, message):
+    def _add_alternatives(self, message, msg_dict):
         """
         There can be only one! ... alternative attachment, and it must be text/html.
 
@@ -169,6 +171,4 @@ class DjrillBackend(BaseEmailBackend):
             raise ValueError("Invalid alternative mimetype '%s'. "
                              "Mandrill only accepts plain text and html emails." % mimetype)
 
-        self.msg_dict.update({
-            "html": message.alternatives[0][0]
-        })
+        msg_dict['html'] = content
