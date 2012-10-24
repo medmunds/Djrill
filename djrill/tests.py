@@ -95,6 +95,16 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
         self.assertEqual(data['message']['to'][4]['email'], "bcc1@example.com")
         self.assertEqual(data['message']['to'][5]['email'], "bcc2@example.com")
 
+    def test_html_message(self):
+        text_content = 'This is an important message.'
+        html_content = '<p>This is an <strong>important</strong> message.</p>'
+        email = mail.EmailMultiAlternatives('Subject', text_content, 'from@example.com', ['to@example.com'])
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+        data = self.get_api_call_data()
+        self.assertEqual(data['message']['text'], text_content)
+        self.assertEqual(data['message']['html'], html_content)
+
 
 class DjrillMandrillFeatureTests(DjrillBackendMockAPITestCase):
     """Test Djrill backend support for Mandrill-specific features"""
