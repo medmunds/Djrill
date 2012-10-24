@@ -102,9 +102,10 @@ Djrill supports most of the functionality of Django's ``EmailMessage`` and ``Ema
 Some limitations:
 
 * Djrill accepts additional headers, but only ``Reply-To`` and ``X-*`` (since that is all that Mandrill accepts). Any
-  other extra headers are silently discarded.
-* Djrill (currently) assumes that if you attach an alternative type, it must be HTML. And if you attach more than one
-  alternative type, a ``ValueError`` exception will be raised.
+  other extra headers will raise a ``ValueError`` exception when you attempt to send the message.
+* Djrill requires that if you ``attach_alternative`` to a message, there must be only one alternative type, and it
+  must be text/html. Otherwise, a ``ValueError`` exception will be raised when you attempt to send the message.
+  (Mandrill doesn't support sending multiple html alternative parts, or any non-html alternatives.)
 * Djrill (currently) silently ignores all attachments on a message.
 * Djrill treats all cc and bcc recipients as if they were additional "to" addresses. (Mandrill does not distinguish cc,
   and only allows a single bcc -- which Djrill doesn't use. *Caution:* depending on the ``preserve_recipients`` setting,
@@ -122,9 +123,8 @@ directly on an ``EmailMessage`` object:
 * ``global_merge_vars`` - a dict -- e.g., ``{ 'company': "ACME", 'offer': "10% off" }``
 * ``recipient_merge_vars`` - a dict whose keys are the recipient email addresses and whose values are dicts of
   merge vars for each recipient -- e.g., ``{ 'wiley@example.com': { 'offer': "15% off anvils" } }``
-* ``tags`` - a list of strings. Any tags over 50 characters in length are silently ignored since Mandrill doesn't
-  support them. Any tags starting with an underscore will raise a ``ValueError`` exception. (Tags with an underscore
-  are reserved by Mandrill.)
+* ``tags`` - a list of strings. Any tags over 50 characters in length or starting with an underscore will raise
+  a ``ValueError`` exception when you attempt to send the message, since Mandrill does not support them.
 * ``google_analytics_domains`` - a list of string domain names
 * ``google_analytics_campaign`` - a string or list of strings
 * ``metadata`` - a dict

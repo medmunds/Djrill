@@ -67,10 +67,14 @@ class DjrillBackend(BaseEmailBackend):
         self.recipients = [{"email": e, "name": n} for n,e in [
             parseaddr(r) for r in recipients_list]]
 
-        self.msg_dict = self._build_standard_message_dict(message)
-
-        if getattr(message, 'alternatives', None):
-            self._add_alternatives(message)
+        try:
+            self.msg_dict = self._build_standard_message_dict(message)
+            if getattr(message, 'alternatives', None):
+                self._add_alternatives(message)
+        except ValueError:
+            if not self.fail_silently:
+                raise
+            return False
 
         djrill_it = requests.post(self.api_action, data=json.dumps({
             "key": self.api_key,
@@ -101,12 +105,10 @@ class DjrillBackend(BaseEmailBackend):
         }
 
         if message.extra_headers:
-            accepted_headers = {}
             for k in message.extra_headers.keys():
-                if k.startswith("X-") or k == "Reply-To":
-                    accepted_headers.update(
-                        {"%s" % k: message.extra_headers[k]})
-            msg_dict.update({"headers": accepted_headers})
+                if k != "Reply-To" and not k.startswith("X-"):
+                    raise ValueError("Invalid message header '%s' - Mandrill only allows Reply-To and X-* headers" % k)
+            msg_dict["headers"] = message.extra_headers
 
         # Mandrill attributes that can be copied directly
         mandrill_attrs = [
@@ -134,6 +136,14 @@ class DjrillBackend(BaseEmailBackend):
                 for rcpt in sorted(message.recipient_metadata.keys())
             ]
 
+        # Sanity check tags
+        if 'tags' in msg_dict:
+            for tag in msg_dict['tags']:
+                if len(tag) > 50:
+                    raise ValueError("Invalid Mandrill tag '%s' - longer than 50 chars" % tag)
+                elif tag.startswith("_"):
+                    raise ValueError("Invalid Mandrill tag '%s' - starts with underscore" % tag)
+
         return msg_dict
 
     def _expand_merge_vars(self, vars):
@@ -143,7 +153,7 @@ class DjrillBackend(BaseEmailBackend):
 
     def _add_alternatives(self, message):
         """
-        There can be only one! ... alternative attachment.
+        There can be only one! ... alternative attachment, and it must be text/html.
 
         Since mandrill does not accept image attachments or anything other
         than HTML, the assumption is the only thing you are attaching is
@@ -151,8 +161,13 @@ class DjrillBackend(BaseEmailBackend):
         """
         if len(message.alternatives) > 1:
             raise ValueError(
-                "Mandrill only accepts plain text and html emails. Please "
-                "check the alternatives you have attached to your message.")
+                "Too many alternatives attached to the message. "
+                "Mandrill only accepts plain text and html emails.")
+
+        (content, mimetype) = message.alternatives[0]
+        if mimetype != 'text/html':
+            raise ValueError("Invalid alternative mimetype '%s'. "
+                             "Mandrill only accepts plain text and html emails." % mimetype)
 
         self.msg_dict.update({
             "html": message.alternatives[0][0]

@@ -77,7 +77,7 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
             ['to1@example.com', 'Also To <to2@example.com>'],
             bcc=['bcc1@example.com', 'Also BCC <bcc2@example.com>'],
             cc=['cc1@example.com', 'Also CC <cc2@example.com>'],
-            headers={'Reply-To': 'another@example.com', 'X-MyHeader': 'my value', 'Errors-To': 'silently stripped'})
+            headers={'Reply-To': 'another@example.com', 'X-MyHeader': 'my value'})
         email.send()
         data = self.get_api_call_data()
         self.assertEqual(data['message']['subject'], "Subject")
@@ -104,6 +104,40 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
         data = self.get_api_call_data()
         self.assertEqual(data['message']['text'], text_content)
         self.assertEqual(data['message']['html'], html_content)
+
+    def test_extra_header_errors(self):
+        email = mail.EmailMessage('Subject', 'Body', 'from@example.com', ['to@example.com'],
+            headers={'Non-X-Non-Reply-To-Header': 'not permitted'})
+        with self.assertRaises(ValueError):
+            email.send()
+
+        # Make sure fail_silently is respected
+        email = mail.EmailMessage('Subject', 'Body', 'from@example.com', ['to@example.com'],
+            headers={'Non-X-Non-Reply-To-Header': 'not permitted'})
+        sent = email.send(fail_silently=True)
+        self.assertFalse(self.mock_post.called, msg="Mandrill API should not be called when send fails silently")
+        self.assertEqual(sent, 0)
+
+    def test_alternative_errors(self):
+        # Multiple alternatives not allowed
+        email = mail.EmailMultiAlternatives('Subject', 'Body', 'from@example.com', ['to@example.com'])
+        email.attach_alternative("<p>First html is OK</p>", "text/html")
+        email.attach_alternative("<p>But second html, not so much</p>", "text/html")
+        with self.assertRaises(ValueError):
+            email.send()
+
+        # Only html alternatives allowed
+        email = mail.EmailMultiAlternatives('Subject', 'Body', 'from@example.com', ['to@example.com'])
+        email.attach_alternative("{'non_html_alternative_type': 'is not allowed'}", "application/json")
+        with self.assertRaises(ValueError):
+            email.send()
+
+        # Make sure fail_silently is respected
+        email = mail.EmailMultiAlternatives('Subject', 'Body', 'from@example.com', ['to@example.com'])
+        email.attach_alternative("{'non_html_alternative_type': 'is not allowed'}", "application/json")
+        sent = email.send(fail_silently=True)
+        self.assertFalse(self.mock_post.called, msg="Mandrill API should not be called when send fails silently")
+        self.assertEqual(sent, 0)
 
 
 class DjrillMandrillFeatureTests(DjrillBackendMockAPITestCase):
@@ -163,6 +197,28 @@ class DjrillMandrillFeatureTests(DjrillBackendMockAPITestCase):
         self.message.send()
         data = self.get_api_call_data()
         self.assertEqual(data['message']['tags'], ["receipt", "repeat-customer"])
+
+    def test_tag_errors(self):
+        # Mandrill reserves tags with underscore
+        self.message.tags = ["good", "_bad"]
+        with self.assertRaises(ValueError):
+            sent = self.message.send()
+            self.assertEqual(sent, 0)
+        # Mandrill discourages tags longer than 50 characters
+        self.message.tags = ["x"*50]
+        sent = self.message.send() # this should succeed
+        self.assertEqual(sent, 1)
+        self.message.tags = ["x"*51] # but this should not
+        with self.assertRaises(ValueError):
+            sent = self.message.send()
+            self.assertEqual(sent, 0)
+
+    def test_tag_errors_fail_silently(self):
+        # Verify fail_silently is respected on tag errors
+        self.message.tags = ["_bad", "x"*51]
+        sent = self.message.send(fail_silently=True)
+        self.assertFalse(self.mock_post.called, msg="Mandrill API should not be called when send fails silently")
+        self.assertEqual(sent, 0)
 
     def test_google_analytics(self):
         self.message.google_analytics_domains = ["example.com"]
