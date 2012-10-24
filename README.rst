@@ -98,6 +98,9 @@ Example:
     msg.attach_alternative(html_content, "text/html")
     msg.send()
 
+If the Mandrill API returns an error response for any reason, the send call will raise a
+``djrill.mail.backends.djrill.DjrillBackendHTTPError`` exception (unless called with fail_silently=True).
+
 Djrill supports most of the functionality of Django's ``EmailMessage`` and ``EmailMultiAlternatives``.
 Some limitations:
 

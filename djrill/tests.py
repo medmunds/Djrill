@@ -7,6 +7,8 @@ from django.test import TestCase
 from django.utils import simplejson as json
 
 from djrill.mail import DjrillMessage
+from djrill.mail.backends.djrill import DjrillBackendHTTPError
+
 
 class DjrillBackendMockAPITestCase(TestCase):
     """TestCase that sets up the Djrill EmailBackend with a mocked Mandrill API"""
@@ -137,6 +139,17 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
         email.attach_alternative("{'non_html_alternative_type': 'is not allowed'}", "application/json")
         sent = email.send(fail_silently=True)
         self.assertFalse(self.mock_post.called, msg="Mandrill API should not be called when send fails silently")
+        self.assertEqual(sent, 0)
+
+    def test_mandrill_api_failure(self):
+        self.mock_post.return_value = self.MockResponse(status_code=400)
+        with self.assertRaises(DjrillBackendHTTPError):
+            sent = mail.send_mail('Subject', 'Body', 'from@example.com', ['to@example.com'])
+            self.assertEqual(sent, 0)
+
+        # Make sure fail_silently is respected
+        self.mock_post.return_value = self.MockResponse(status_code=400)
+        sent = mail.send_mail('Subject', 'Body', 'from@example.com', ['to@example.com'], fail_silently=True)
         self.assertEqual(sent, 0)
 
 
