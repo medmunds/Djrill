@@ -7,7 +7,7 @@ email service from MailChimp_.
 An optional Django admin interface is included. The admin interface allows you to:
 
 * Check the status of your Mandrill API connection.
-* See stats on email senders, tags and urls.
+* See stats on email tags and urls.
 
 Djrill is made available under the BSD license.
 
@@ -148,9 +148,10 @@ tests.py.
 Testing
 -------
 
-The included tests verify that Djrill constructs the expected Mandrill API calls, without actually calling Mandrill
-or sending any email. So the tests don't require a Mandrill API key, but they *do* require mock_ (``pip install mock``).
-To run the tests, either::
+The included tests verify that Djrill constructs the expected Mandrill API
+calls, without actually calling Mandrill or sending any email. So the tests
+don't require a Mandrill API key, but they *do* require mock_
+(``pip install mock``). To run the tests, either::
 
     python setup.py test
 

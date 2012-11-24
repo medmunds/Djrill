@@ -78,7 +78,8 @@ class DjrillBackend(BaseEmailBackend):
         if djrill_it.status_code != 200:
             if not self.fail_silently:
                 raise DjrillBackendHTTPError(status_code=djrill_it.status_code,
-                    log_message="Failed to send a message to %s, from %s" % (msg_dict['to'], msg_dict['from_email']))
+                    log_message="Failed to send a message to %s, from %s" %
+                                (msg_dict['to'], msg_dict['from_email']))
             return False
         return True
 
@@ -101,9 +102,10 @@ class DjrillBackend(BaseEmailBackend):
             "text": message.body,
             "subject": message.subject,
             "from_email": from_email,
-            "from_name": from_name,
             "to": recipients
         }
+        if from_name:
+            msg_dict["from_name"] = from_name
         if message.extra_headers:
             for k in message.extra_headers.keys():
                 if k != "Reply-To" and not k.startswith("X-"):
@@ -169,6 +171,7 @@ class DjrillBackend(BaseEmailBackend):
         (content, mimetype) = message.alternatives[0]
         if mimetype != 'text/html':
             raise ValueError("Invalid alternative mimetype '%s'. "
-                             "Mandrill only accepts plain text and html emails." % mimetype)
+                             "Mandrill only accepts plain text and html emails."
+                             % mimetype)
 
         msg_dict['html'] = content

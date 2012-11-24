@@ -11,7 +11,7 @@ from djrill.mail.backends.djrill import DjrillBackendHTTPError
 
 
 class DjrillBackendMockAPITestCase(TestCase):
-    """TestCase that sets up the Djrill EmailBackend with a mocked Mandrill API"""
+    """TestCase that uses Djrill EmailBackend with a mocked Mandrill API"""
 
     class MockResponse:
         """requests.post return value mock sufficient for DjrillBackend"""
@@ -25,7 +25,8 @@ class DjrillBackendMockAPITestCase(TestCase):
 
         settings.MANDRILL_API_KEY = "FAKE_API_KEY_FOR_TESTING"
 
-        self.original_email_backend = settings.EMAIL_BACKEND # this will be Django's locmem EmailBackend during tests
+        # Django TestCase sets up locmem EmailBackend; override it here
+        self.original_email_backend = settings.EMAIL_BACKEND
         settings.EMAIL_BACKEND = "djrill.mail.backends.djrill.DjrillBackend"
 
     def tearDown(self):
@@ -33,25 +34,28 @@ class DjrillBackendMockAPITestCase(TestCase):
         settings.EMAIL_BACKEND = self.original_email_backend
 
     def get_api_call_data(self):
-        """Returns the data posted to the Mandrill API, or fails test if API wasn't called"""
+        """Returns the data posted to the Mandrill API.
+
+        Fails test if API wasn't called.
+        """
         if self.mock_post.call_args is None:
             raise AssertionError("Mandrill API was not called")
         (args, kwargs) = self.mock_post.call_args
         if 'data' not in kwargs:
-            raise AssertionError("requests.post was called without data kwarg -- "
-                "Maybe tests need to be updated for backend changes?")
+            raise AssertionError("requests.post was called without data kwarg "
+                "-- Maybe tests need to be updated for backend changes?")
         return json.loads(kwargs['data'])
-
 
 class DjrillBackendTests(DjrillBackendMockAPITestCase):
     """Test Djrill's support for Django mail wrappers"""
 
     def test_send_mail(self):
-        mail.send_mail('Subject here', 'Here is the message.', 'from@example.com',
-            ['to@example.com'], fail_silently=False)
+        mail.send_mail('Subject here', 'Here is the message.',
+            'from@example.com', ['to@example.com'], fail_silently=False)
         data = self.get_api_call_data()
         self.assertEqual(data['message']['subject'], "Subject here")
         self.assertEqual(data['message']['text'], "Here is the message.")
+        self.assertFalse('from_name' in data['message'])
         self.assertEqual(data['message']['from_email'], "from@example.com")
         self.assertEqual(len(data['message']['to']), 1)
         self.assertEqual(data['message']['to'][0]['email'], "to@example.com")
@@ -59,10 +63,14 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
     def test_missing_api_key(self):
         del settings.MANDRILL_API_KEY
         with self.assertRaises(ImproperlyConfigured):
-            mail.send_mail('Subject', 'Message', 'from@example.com', ['to@example.com'])
+            mail.send_mail('Subject', 'Message', 'from@example.com',
+                ['to@example.com'])
 
     def test_name_addr(self):
-        """Make sure RFC2822 name-addr format (with display-name) is allowed for both from and to"""
+        """Make sure RFC2822 name-addr format (with display-name) is allowed
+
+        (Test both sender and recipient addresses)
+        """
         mail.send_mail('Subject', 'Message', 'From Name <from@example.com>',
             ['Recipient #1 <to1@example.com>', 'to2@example.com'])
         data = self.get_api_call_data()
@@ -75,17 +83,20 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
         self.assertEqual(data['message']['to'][1]['email'], "to2@example.com")
 
     def test_email_message(self):
-        email = mail.EmailMessage('Subject', 'Body goes here', 'from@example.com',
+        email = mail.EmailMessage('Subject', 'Body goes here',
+            'from@example.com',
             ['to1@example.com', 'Also To <to2@example.com>'],
             bcc=['bcc1@example.com', 'Also BCC <bcc2@example.com>'],
             cc=['cc1@example.com', 'Also CC <cc2@example.com>'],
-            headers={'Reply-To': 'another@example.com', 'X-MyHeader': 'my value'})
+            headers={'Reply-To': 'another@example.com',
+                     'X-MyHeader': 'my value'})
         email.send()
         data = self.get_api_call_data()
         self.assertEqual(data['message']['subject'], "Subject")
         self.assertEqual(data['message']['text'], "Body goes here")
         self.assertEqual(data['message']['from_email'], "from@example.com")
-        self.assertEqual(data['message']['headers'], { 'Reply-To': 'another@example.com', 'X-MyHeader': 'my value' })
+        self.assertEqual(data['message']['headers'],
+            { 'Reply-To': 'another@example.com', 'X-MyHeader': 'my value' })
         # Mandrill doesn't have a notion of cc, and only allows a single bcc.
         # Djrill just treats cc and bcc as though they were "to" addresses,
         # which may or may not be what you want.
@@ -100,7 +111,8 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
     def test_html_message(self):
         text_content = 'This is an important message.'
         html_content = '<p>This is an <strong>important</strong> message.</p>'
-        email = mail.EmailMultiAlternatives('Subject', text_content, 'from@example.com', ['to@example.com'])
+        email = mail.EmailMultiAlternatives('Subject', text_content,
+            'from@example.com', ['to@example.com'])
         email.attach_alternative(html_content, "text/html")
         email.send()
         data = self.get_api_call_data()
@@ -122,23 +134,27 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
 
     def test_alternative_errors(self):
         # Multiple alternatives not allowed
-        email = mail.EmailMultiAlternatives('Subject', 'Body', 'from@example.com', ['to@example.com'])
+        email = mail.EmailMultiAlternatives('Subject', 'Body',
+            'from@example.com', ['to@example.com'])
         email.attach_alternative("<p>First html is OK</p>", "text/html")
-        email.attach_alternative("<p>But second html, not so much</p>", "text/html")
+        email.attach_alternative("<p>But not second html</p>", "text/html")
         with self.assertRaises(ValueError):
             email.send()
 
         # Only html alternatives allowed
-        email = mail.EmailMultiAlternatives('Subject', 'Body', 'from@example.com', ['to@example.com'])
-        email.attach_alternative("{'non_html_alternative_type': 'is not allowed'}", "application/json")
+        email = mail.EmailMultiAlternatives('Subject', 'Body',
+            'from@example.com', ['to@example.com'])
+        email.attach_alternative("{'not': 'allowed'}", "application/json")
         with self.assertRaises(ValueError):
             email.send()
 
         # Make sure fail_silently is respected
-        email = mail.EmailMultiAlternatives('Subject', 'Body', 'from@example.com', ['to@example.com'])
-        email.attach_alternative("{'non_html_alternative_type': 'is not allowed'}", "application/json")
+        email = mail.EmailMultiAlternatives('Subject', 'Body',
+            'from@example.com', ['to@example.com'])
+        email.attach_alternative("{'not': 'allowed'}", "application/json")
         sent = email.send(fail_silently=True)
-        self.assertFalse(self.mock_post.called, msg="Mandrill API should not be called when send fails silently")
+        self.assertFalse(self.mock_post.called,
+            msg="Mandrill API should not be called when send fails silently")
         self.assertEqual(sent, 0)
 
     def test_mandrill_api_failure(self):

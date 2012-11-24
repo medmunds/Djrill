@@ -14,7 +14,7 @@ class DjrillAdminMedia(object):
     def _media(self):
         js = ["js/core.js", "js/jquery.min.js", "js/jquery.init.js"]
 
-        return forms.Media(js=["%s%s" % (settings.ADMIN_MEDIA_PREFIX, url)
+        return forms.Media(js=["%s%s" % (settings.STATIC_URL, url)
             for url in js])
     media = property(_media)
 
