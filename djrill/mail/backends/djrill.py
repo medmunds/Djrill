@@ -7,13 +7,16 @@ from django.utils import simplejson as json
 from email.utils import parseaddr
 import requests
 
+# This backend was developed against this API endpoint.
+# You can override in settings.py, if desired.
 MANDRILL_API_URL = "http://mandrillapp.com/api/1.0"
 
 class DjrillBackendHTTPError(Exception):
     """An exception that will turn into an HTTP error response."""
-    def __init__(self, status_code, log_message=None):
+    def __init__(self, status_code, response=None, log_message=None):
         super(DjrillBackendHTTPError, self).__init__()
         self.status_code = status_code
+        self.response = response # often contains helpful Mandrill info
         self.log_message = log_message
 
     def __str__(self):
@@ -35,7 +38,7 @@ class DjrillBackend(BaseEmailBackend):
         """
         super(DjrillBackend, self).__init__(**kwargs)
         self.api_key = getattr(settings, "MANDRILL_API_KEY", None)
-        self.api_url = getattr(settings, "MANDRILL_API_URL", MANDRILL_API_URL) # allow override in settings
+        self.api_url = getattr(settings, "MANDRILL_API_URL", MANDRILL_API_URL)
 
         if not self.api_key:
             raise ImproperlyConfigured("You have not set your mandrill api key "
@@ -77,7 +80,9 @@ class DjrillBackend(BaseEmailBackend):
 
         if djrill_it.status_code != 200:
             if not self.fail_silently:
-                raise DjrillBackendHTTPError(status_code=djrill_it.status_code,
+                raise DjrillBackendHTTPError(
+                    status_code=djrill_it.status_code,
+                    response = djrill_it,
                     log_message="Failed to send a message to %s, from %s" %
                                 (msg_dict['to'], msg_dict['from_email']))
             return False
@@ -89,50 +94,59 @@ class DjrillBackend(BaseEmailBackend):
         Builds the standard dict that Django's send_mail and send_mass_mail
         use by default. Standard text email messages sent through Django will
         still work through Mandrill.
+
+        Raises ValueError for any standard EmailMessage features that cannot be
+        accurately communicated to Mandrill (e.g., prohibited headers).
         """
         sender = sanitize_address(message.from_email, message.encoding)
         from_name, from_email = parseaddr(sender)
 
-        recipients_list = [sanitize_address(addr, message.encoding)
-                           for addr in message.recipients()]
-        recipients = [{"email": to_email, "name": to_name} for to_name, to_email in
-                      [parseaddr(rcpt) for rcpt in recipients_list]]
+        recipients = [parseaddr(sanitize_address(addr, message.encoding))
+                      for addr in message.recipients()]
+        to_list = [{"email": to_email, "name": to_name}
+                   for (to_name, to_email) in recipients]
 
         msg_dict = {
             "text": message.body,
             "subject": message.subject,
             "from_email": from_email,
-            "to": recipients
+            "to": to_list
         }
         if from_name:
             msg_dict["from_name"] = from_name
+
         if message.extra_headers:
             for k in message.extra_headers.keys():
                 if k != "Reply-To" and not k.startswith("X-"):
-                    raise ValueError("Invalid message header '%s' - Mandrill only allows Reply-To and X-* headers" % k)
+                    raise ValueError("Invalid message header '%s' - Mandrill "
+                                     "only allows Reply-To and X-* headers" % k)
             msg_dict["headers"] = message.extra_headers
 
         return msg_dict
 
     def _add_mandrill_options(self, message, msg_dict):
-        """Extend msg_dict to include Mandrill-specific options set on message"""
-        # Mandrill attributes that can be copied directly
+        """Extend msg_dict to include Mandrill options set on message"""
+        # Mandrill attributes that can be copied directly:
         mandrill_attrs = [
-            'from_name', # deprecated Djrill legacy - overrides display name parsed from from_email above
-            'track_opens', 'track_clicks', 'auto_text', 'url_strip_qs', 'preserve_recipients',
+            'from_name', # overrides display name parsed from from_email above
+            'track_opens', 'track_clicks', 'auto_text', 'url_strip_qs',
+            'tags', 'preserve_recipients',
             'google_analytics_domains', 'google_analytics_campaign',
             'metadata']
         for attr in mandrill_attrs:
             if hasattr(message, attr):
                 msg_dict[attr] = getattr(message, attr)
 
-        # Allow simple python dicts in place of Mandrill [{name:name, value:value},...] arrays...
+        # Allow simple python dicts in place of Mandrill
+        # [{name:name, value:value},...] arrays...
         if hasattr(message, 'global_merge_vars'):
-            msg_dict['global_merge_vars'] = self._expand_merge_vars(message.global_merge_vars)
+            msg_dict['global_merge_vars'] = \
+                self._expand_merge_vars(message.global_merge_vars)
         if hasattr(message, 'merge_vars'):
             # For testing reproducibility, we sort the recipients
             msg_dict['merge_vars'] = [
-                { 'rcpt': rcpt, 'vars': self._expand_merge_vars(message.merge_vars[rcpt]) }
+                { 'rcpt': rcpt,
+                  'vars': self._expand_merge_vars(message.merge_vars[rcpt]) }
                 for rcpt in sorted(message.merge_vars.keys())
             ]
         if hasattr(message, 'recipient_metadata'):
@@ -142,18 +156,15 @@ class DjrillBackend(BaseEmailBackend):
                 for rcpt in sorted(message.recipient_metadata.keys())
             ]
 
-        if hasattr(message, 'tags'):
-            for tag in message.tags:
-                if len(tag) > 50:
-                    raise ValueError("Invalid Mandrill tag '%s' - longer than 50 chars" % tag)
-                elif tag.startswith("_"):
-                    raise ValueError("Invalid Mandrill tag '%s' - starts with underscore" % tag)
-            msg_dict['tags'] = message.tags
 
     def _expand_merge_vars(self, vars):
-        """Convert a dict of { name: value, ... } to [ {'name': name, 'value': value }, ... ]"""
+        """Convert a Python dict to an array of name-value used by Mandrill.
+
+        { name: value, ... } --> [ {'name': name, 'value': value }, ... ]
+        """
         # For testing reproducibility, we sort the keys
-        return [ { 'name': name, 'value': vars[name] } for name in sorted(vars.keys()) ]
+        return [ { 'name': name, 'value': vars[name] }
+                 for name in sorted(vars.keys()) ]
 
     def _add_alternatives(self, message, msg_dict):
         """

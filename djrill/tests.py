@@ -1,6 +1,9 @@
 from mock import patch
+import sys
 
 from django.conf import settings
+from django.contrib import admin
+from django.contrib.auth.models import User
 from django.core import mail
 from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase
@@ -15,8 +18,9 @@ class DjrillBackendMockAPITestCase(TestCase):
 
     class MockResponse:
         """requests.post return value mock sufficient for DjrillBackend"""
-        def __init__(self, status_code=200):
+        def __init__(self, status_code=200, content="{}"):
             self.status_code = status_code
+            self.content = content
 
     def setUp(self):
         self.patch = patch('requests.post')
@@ -45,6 +49,7 @@ class DjrillBackendMockAPITestCase(TestCase):
             raise AssertionError("requests.post was called without data kwarg "
                 "-- Maybe tests need to be updated for backend changes?")
         return json.loads(kwargs['data'])
+
 
 class DjrillBackendTests(DjrillBackendMockAPITestCase):
     """Test Djrill's support for Django mail wrappers"""
@@ -120,16 +125,19 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
         self.assertEqual(data['message']['html'], html_content)
 
     def test_extra_header_errors(self):
-        email = mail.EmailMessage('Subject', 'Body', 'from@example.com', ['to@example.com'],
+        email = mail.EmailMessage('Subject', 'Body', 'from@example.com',
+            ['to@example.com'],
             headers={'Non-X-Non-Reply-To-Header': 'not permitted'})
         with self.assertRaises(ValueError):
             email.send()
 
         # Make sure fail_silently is respected
-        email = mail.EmailMessage('Subject', 'Body', 'from@example.com', ['to@example.com'],
+        email = mail.EmailMessage('Subject', 'Body', 'from@example.com',
+            ['to@example.com'],
             headers={'Non-X-Non-Reply-To-Header': 'not permitted'})
         sent = email.send(fail_silently=True)
-        self.assertFalse(self.mock_post.called, msg="Mandrill API should not be called when send fails silently")
+        self.assertFalse(self.mock_post.called,
+            msg="Mandrill API should not be called when send fails silently")
         self.assertEqual(sent, 0)
 
     def test_alternative_errors(self):
@@ -160,12 +168,14 @@ class DjrillBackendTests(DjrillBackendMockAPITestCase):
     def test_mandrill_api_failure(self):
         self.mock_post.return_value = self.MockResponse(status_code=400)
         with self.assertRaises(DjrillBackendHTTPError):
-            sent = mail.send_mail('Subject', 'Body', 'from@example.com', ['to@example.com'])
+            sent = mail.send_mail('Subject', 'Body', 'from@example.com',
+                ['to@example.com'])
             self.assertEqual(sent, 0)
 
         # Make sure fail_silently is respected
         self.mock_post.return_value = self.MockResponse(status_code=400)
-        sent = mail.send_mail('Subject', 'Body', 'from@example.com', ['to@example.com'], fail_silently=True)
+        sent = mail.send_mail('Subject', 'Body', 'from@example.com',
+            ['to@example.com'], fail_silently=True)
         self.assertEqual(sent, 0)
 
 
@@ -174,12 +184,14 @@ class DjrillMandrillFeatureTests(DjrillBackendMockAPITestCase):
 
     def setUp(self):
         super(DjrillMandrillFeatureTests, self).setUp()
-        self.message = mail.EmailMessage('Subject', 'Text Body', 'from@example.com', ['to@example.com'])
+        self.message = mail.EmailMessage('Subject', 'Text Body',
+            'from@example.com', ['to@example.com'])
 
     def test_tracking(self):
-        # First make sure we're not setting the API param if the track_click attr isn't there.
-        # (The Mandrill account option of True for html, False for plaintext can't be communicated through
-        # the API, other than by omitting the track_clicks API param to use your account default.)
+        # First make sure we're not setting the API param if the track_click
+        # attr isn't there. (The Mandrill account option of True for html,
+        # False for plaintext can't be communicated through the API, other than
+        # by omitting the track_clicks API param to use your account default.)
         self.message.send()
         data = self.get_api_call_data()
         self.assertFalse('track_clicks' in data['message'])
@@ -202,10 +214,13 @@ class DjrillMandrillFeatureTests(DjrillBackendMockAPITestCase):
         self.assertEqual(data['message']['preserve_recipients'], True)
 
     def test_merge(self):
-        # Djrill expands simple python dicts into the more-verbose name/value structures the Mandrill API uses
-        self.message.global_merge_vars = { 'GREETING': "Hello", 'ACCOUNT_TYPE': "Basic" }
+        # Djrill expands simple python dicts into the more-verbose name/value
+        # structures the Mandrill API uses
+        self.message.global_merge_vars = { 'GREETING': "Hello",
+                                           'ACCOUNT_TYPE': "Basic" }
         self.message.merge_vars = {
-            "customer@example.com": { 'GREETING': "Dear Customer", 'ACCOUNT_TYPE': "Premium" },
+            "customer@example.com": { 'GREETING': "Dear Customer",
+                                      'ACCOUNT_TYPE': "Premium" },
             "guest@example.com": { 'GREETING': "Dear Guest" },
         }
         self.message.send()
@@ -222,58 +237,127 @@ class DjrillMandrillFeatureTests(DjrillBackendMockAPITestCase):
             ])
 
     def test_tags(self):
-        self.message.tags = ["receipt", "repeat-customer"]
+        self.message.tags = ["receipt", "repeat-user"]
         self.message.send()
         data = self.get_api_call_data()
-        self.assertEqual(data['message']['tags'], ["receipt", "repeat-customer"])
-
-    def test_tag_errors(self):
-        # Mandrill reserves tags with underscore
-        self.message.tags = ["good", "_bad"]
-        with self.assertRaises(ValueError):
-            sent = self.message.send()
-            self.assertEqual(sent, 0)
-        # Mandrill discourages tags longer than 50 characters
-        self.message.tags = ["x"*50]
-        sent = self.message.send() # this should succeed
-        self.assertEqual(sent, 1)
-        self.message.tags = ["x"*51] # but this should not
-        with self.assertRaises(ValueError):
-            sent = self.message.send()
-            self.assertEqual(sent, 0)
-
-    def test_tag_errors_fail_silently(self):
-        # Verify fail_silently is respected on tag errors
-        self.message.tags = ["_bad", "x"*51]
-        sent = self.message.send(fail_silently=True)
-        self.assertFalse(self.mock_post.called, msg="Mandrill API should not be called when send fails silently")
-        self.assertEqual(sent, 0)
+        self.assertEqual(data['message']['tags'], ["receipt", "repeat-user"])
 
     def test_google_analytics(self):
         self.message.google_analytics_domains = ["example.com"]
         self.message.google_analytics_campaign = "Email Receipts"
         self.message.send()
         data = self.get_api_call_data()
-        self.assertEqual(data['message']['google_analytics_domains'], ["example.com"])
-        self.assertEqual(data['message']['google_analytics_campaign'], "Email Receipts")
+        self.assertEqual(data['message']['google_analytics_domains'],
+            ["example.com"])
+        self.assertEqual(data['message']['google_analytics_campaign'],
+            "Email Receipts")
 
     def test_metadata(self):
-        self.message.metadata = { 'batch_number': "12345", 'batch_type': "Receipts" }
+        self.message.metadata = { 'batch_num': "12345", 'type': "Receipts" }
         self.message.recipient_metadata = {
-            # Djrill expands simple python dicts into the more-verbose name/value structures the Mandrill API uses
-            "customer@example.com": { 'customer_id': "67890", 'order_id': "54321"  },
-            "guest@example.com": { 'customer_id': "94107", 'order_id': "43215"  }
+            # Djrill expands simple python dicts into the more-verbose
+            # name/value structures the Mandrill API uses
+            "customer@example.com": { 'cust_id': "67890", 'order_id': "54321" },
+            "guest@example.com": { 'cust_id': "94107", 'order_id': "43215" }
         }
         self.message.send()
         data = self.get_api_call_data()
-        self.assertEqual(data['message']['metadata'], { 'batch_number': "12345", 'batch_type': "Receipts" })
+        self.assertEqual(data['message']['metadata'], { 'batch_num': "12345",
+                                                        'type': "Receipts" })
         self.assertEqual(data['message']['recipient_metadata'],
             [ { 'rcpt': "customer@example.com",
-                'values': { 'customer_id': "67890", 'order_id': "54321" } },
+                'values': { 'cust_id': "67890", 'order_id': "54321" } },
               { 'rcpt': "guest@example.com",
-                'values': { 'customer_id': "94107", 'order_id': "43215" } }
+                'values': { 'cust_id': "94107", 'order_id': "43215" } }
             ])
 
+    def test_default_omits_options(self):
+        """Make sure by default we don't send any Mandrill-specific options.
+
+        Options not specified by the caller should be omitted entirely from
+        the Mandrill API call (*not* sent as False or empty). This ensures
+        that your Mandrill account settings apply by default.
+        """
+        self.message.send()
+        data = self.get_api_call_data()
+        self.assertFalse('from_name' in data['message'])
+        self.assertFalse('track_opens' in data['message'])
+        self.assertFalse('track_clicks' in data['message'])
+        self.assertFalse('auto_text' in data['message'])
+        self.assertFalse('url_strip_qs' in data['message'])
+        self.assertFalse('tags' in data['message'])
+        self.assertFalse('preserve_recipients' in data['message'])
+        self.assertFalse('google_analytics_domains' in data['message'])
+        self.assertFalse('google_analytics_campaign' in data['message'])
+        self.assertFalse('metadata' in data['message'])
+        self.assertFalse('global_merge_vars' in data['message'])
+        self.assertFalse('merge_vars' in data['message'])
+        self.assertFalse('recipient_metadata' in data['message'])
+
+
+def reset_admin_site():
+    """Return the Django admin globals to their original state"""
+    admin.site = admin.AdminSite() # restore default
+    if 'djrill.admin' in sys.modules:
+        del sys.modules['djrill.admin'] # force autodiscover to re-import
+
+
+class DjrillAdminTests(DjrillBackendMockAPITestCase):
+    """Test the Djrill admin site"""
+
+    # These tests currently just verify that the admin site pages load
+    # without error -- they don't test any Mandrill-supplied content.
+    # (Future improvements could mock the Mandrill responses.)
+
+    # These urls set up the DjrillAdminSite as suggested in the readme
+    urls = 'djrill.test_admin_urls'
+
+    @classmethod
+    def setUpClass(cls):
+        # Other test cases may muck with the Django admin site globals,
+        # so return it to the default state before loading test_admin_urls
+        reset_admin_site()
+
+    def setUp(self):
+        super(DjrillAdminTests, self).setUp()
+        # Must be authenticated staff to access admin site...
+        admin = User.objects.create_user('admin', 'admin@example.com', 'secret')
+        admin.is_staff = True
+        admin.save()
+        self.client.login(username='admin', password='secret')
+
+    def test_admin_senders(self):
+        response = self.client.get('/admin/djrill/senders/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Senders")
+
+    def test_admin_status(self):
+        response = self.client.get('/admin/djrill/status/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Status")
+
+    def test_admin_tags(self):
+        response = self.client.get('/admin/djrill/tags/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Tags")
+
+    def test_admin_urls(self):
+        response = self.client.get('/admin/djrill/urls/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "URLs")
+
+    def test_admin_index(self):
+        """Make sure Djrill section is included in the admin index page"""
+        response = self.client.get('/admin/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Djrill")
+
+
+class DjrillNoAdminTests(TestCase):
+    def test_admin_autodiscover_without_djrill(self):
+        """Make sure autodiscover doesn't die without DjrillAdminSite"""
+        reset_admin_site()
+        admin.autodiscover() # test: this shouldn't error
 
 
 class DjrillMessageTests(TestCase):
